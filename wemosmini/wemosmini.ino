@@ -3,9 +3,9 @@ int enA = 0;
 int in1 = 5;
 int in2 = 4;
 // Motor B connections
-int enB = 3;
-int in3 = 5;
-int in4 = 4;
+int enB = 13;
+int in3 = 12;
+int in4 = 14;
 
 void setup() {
   // Set all the motor control pins to outputs
