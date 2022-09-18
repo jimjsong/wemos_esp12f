@@ -1,4 +1,3 @@
-const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML>
 <html>
 	<head>
@@ -20,13 +19,15 @@ const char index_html[] PROGMEM = R"rawliteral(
 		</center>
     <script type="text/javascript">
 			var joy1 = new JoyStick('joy1Div', {"internalFillColor": "#ff00ff", "externalLineWidth":5,}, function(stickData) {
-				posX.value = stickData.xPosition;
-				posY.value = stickData.yPosition;
+				posX.value = Math.floor(stickData.x /2.0);
+				posY.value = Math.floor(stickData.y /2.0);
+        websocket.send(posX.value + ',' + posY.value);
 			});
 
       var gateway = `ws://${window.location.hostname}/ws`;
       var websocket;
       window.addEventListener('load', onLoad);
+      
       function initWebSocket() {
         console.log('Trying to open a WebSocket connection...');
         websocket = new WebSocket(gateway);
@@ -53,15 +54,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       }
       function onLoad(event) {
         initWebSocket();
-        initButton();
-      }
-      function initButton() {
-        document.getElementById('button').addEventListener('click', toggle);
-      }
-      function toggle(){
-        websocket.send('toggle');
       }
     </script>
   </body>
 </html>
-)rawliteral";

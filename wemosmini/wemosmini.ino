@@ -1,27 +1,28 @@
 
-// Import required libraries
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include "index_html.h"
+#include <FS.h>
 
-#define MIN_MOTOR_VALUE 130
 #define MAX_PWM_VAL 255
-#define PWMA 0  //Right side 
-#define PWMB 13  //Left side 
+#define MIN_MOTOR_VALUE 130
 
 // Motor A connections
-int enA = 0;
+int PWMA = 0;
 int in1 = 5;
 int in2 = 4;
+
 // Motor B connections
-int enB = 13;
+int PWMB = 13;
 int in3 = 12;
 int in4 = 14;
 
 // Replace with your network credentials
-const char* ssid = "YourWiFi";
-const char* password = "YourWifiPassword";
+const char* ssid = "YOURSID";
+const char* password = "YOURPWD";
 
 int x = 0;
 int y = 0;
@@ -33,7 +34,7 @@ AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 void notifyClients() {
-  ws.textAll(String("somevalue"));
+  ws.textAll(String("Hello World!"));
 }
 
 void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
@@ -62,6 +63,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
 //      ledState = !ledState;
 //      notifyClients();
 //    }
+    calc();
   }
 }
 
@@ -86,6 +88,10 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
 void initWebSocket() {
   ws.onEvent(onEvent);
   server.addHandler(&ws);
+}
+
+String processor(const String& var){
+  return "";
 }
 
 void motor1forward() {
@@ -117,9 +123,19 @@ void motorsstop() {
 }
 
 void setup() {
+  Serial.begin(115200);
+  Serial.println("Booting");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("Connection Failed! Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
+  
   // Set all the motor control pins to outputs
-  pinMode(enA, OUTPUT);
-  pinMode(enB, OUTPUT);
+  pinMode(PWMA, OUTPUT);
+  pinMode(PWMB, OUTPUT);
   pinMode(in1, OUTPUT);
   pinMode(in2, OUTPUT);
   pinMode(in3, OUTPUT);
@@ -127,6 +143,43 @@ void setup() {
   
   motorsstop();
 
+// Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+
+  // Hostname defaults to esp8266-[ChipID]
+  // ArduinoOTA.setHostname("myesp8266");
+
+  // No authentication by default
+  // ArduinoOTA.setPassword((const char *)"123");
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("Start");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  
+// Initialize LittleFS
+  if(!SPIFFS.begin()){
+    Serial.println("An Error has occurred while mounting SPIFFS");
+    return;
+  }
+  
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -141,16 +194,25 @@ void setup() {
 
   initWebSocket();
 
+  server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/favicon.ico", "image/png");
+  });
+
+  // Route for root / web page
+  server.on("/hello", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/hello.html", String(), false, processor);
+  });
+
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/html", index_html);
+    request->send(SPIFFS, "/index.html", String(), false, processor);
   });
 
   // Start server
   server.begin();
 }
 
-void loop() {
+void calc() {
   int right = 0;
   int left = 0;
   ws.cleanupClients();
@@ -170,73 +232,27 @@ void loop() {
       right = (int)(z/100.0 * 255);
     }
 
-    analogWrite(PWMA, left);
-    analogWrite(PWMB, right);
     motor1forward();
     motor2forward();
   
   } else  if (y < -30) { //backward
+    right = MAX_PWM_VAL;
+    left = MAX_PWM_VAL;
     motor1reverse();
     motor2reverse();
+
   } else {
+    right = 0;
+    left = 0;
     digitalWrite(PWMA, LOW);
     digitalWrite(PWMB, LOW);
   }
+
+  analogWrite(PWMA, left);
+  analogWrite(PWMB, right);  
 }
 
-// This function lets you control spinning direction of motors
-void directionControl() {
-  // Set motors to maximum speed
-  // For PWM maximum possible values are 0 to 255
-  analogWrite(enA, 255);
-  analogWrite(enB, 255);
 
-  // Turn on motor A & B
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-  delay(2000);
-  
-  // Now change motor directions
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-  delay(2000);
-  
-  // Turn off motors
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, LOW);
-}
-
-// This function lets you control speed of the motors
-void speedControl() {
-  // Turn on motors
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-  
-  // Accelerate from zero to maximum speed
-  for (int i = 0; i < 256; i++) {
-    analogWrite(enA, i);
-    analogWrite(enB, i);
-    delay(20);
-  }
-  
-  // Decelerate from maximum speed to zero
-  for (int i = 255; i >= 0; --i) {
-    analogWrite(enA, i);
-    analogWrite(enB, i);
-    delay(20);
-  }
-  
-  // Now turn off motors
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, LOW);
+void loop() {
+  ArduinoOTA.handle();
 }
